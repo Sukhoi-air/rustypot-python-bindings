@@ -132,7 +132,7 @@ impl FeetechController {
             current_speed: current_speed.clone(),
         };
 
-        let dt = Duration::from_secs_f32(1.0 / update_freq);
+        let period = Duration::from_secs_f32(1.0 / update_freq);
 
         let goal_pos = goal_pos.clone();
         let kps = kps.clone();
@@ -144,6 +144,7 @@ impl FeetechController {
             let mut last_pos = vec![0.0; ids.len()];
 
             loop {
+                let tic = Instant::now();
                 let present_pos: Vec<f64> = io
                     .read_present_position(ids.clone())
                     .unwrap()
@@ -201,7 +202,15 @@ impl FeetechController {
 
                 speed_decimation_index += 1;
 
-                thread::sleep(dt);
+                let toc = Instant::now();
+                let elapsed = toc - tic;
+                let sleep_time = period - elapsed;
+
+                if sleep_time.as_secs_f64() < 0.0 {
+                    eprintln!("Warning: loop took longer than period");
+                } else {
+                    thread::sleep(sleep_time);
+                }
             }
         });
         Ok(c)

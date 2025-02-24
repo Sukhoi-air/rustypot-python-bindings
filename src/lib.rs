@@ -12,9 +12,61 @@ struct IO {
 
 #[pymethods]
 impl IO {
-    fn read_pos(&self, ids: Vec<u8>) -> PyResult<Vec<i16>> {
+    fn read_present_position(&self, ids: Vec<u8>) -> PyResult<Vec<f64>> {
         let mut serial_port = self.serial_port.lock().unwrap();
         feetech_sts3215::sync_read_present_position(&self.io, serial_port.as_mut(), &ids)
+            .map(|pos| {
+                pos.into_iter()
+                    .map(feetech_sts3215::conv::dxl_pos_to_radians)
+                    .collect()
+            })
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+    // fn read_present_velocity(&self, ids: Vec<u8>) -> PyResult<Vec<u16>> {
+    //     let mut serial_port = self.serial_port.lock().unwrap();
+    //     feetech_sts3215::sync_read_present_speed(&self.io, serial_port.as_mut(), &ids)
+    //         .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    // }
+
+    fn set_mode(&self, ids: Vec<u8>, mode: u8) -> PyResult<()> {
+        let mut serial_port = self.serial_port.lock().unwrap();
+
+        feetech_sts3215::sync_write_mode(
+            &self.io,
+            serial_port.as_mut(),
+            &ids,
+            &vec![mode; ids.len()],
+        )
+        .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+
+    fn enable_torque(&self, ids: Vec<u8>) -> PyResult<()> {
+        let mut serial_port = self.serial_port.lock().unwrap();
+
+        feetech_sts3215::sync_write_torque_enable(
+            &self.io,
+            serial_port.as_mut(),
+            &ids,
+            &vec![true as u8; ids.len()],
+        )
+        .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+    fn disable_torque(&self, ids: Vec<u8>) -> PyResult<()> {
+        let mut serial_port = self.serial_port.lock().unwrap();
+
+        feetech_sts3215::sync_write_torque_enable(
+            &self.io,
+            serial_port.as_mut(),
+            &ids,
+            &vec![false as u8; ids.len()],
+        )
+        .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+
+    fn set_goal_time(&self, ids: Vec<u8>, goal_time: Vec<u16>) -> PyResult<()> {
+        let mut serial_port = self.serial_port.lock().unwrap();
+
+        feetech_sts3215::sync_write_goal_time(&self.io, serial_port.as_mut(), &ids, &goal_time)
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
 }
@@ -31,7 +83,7 @@ fn feetech(serialportname: &str, baudrate: u32) -> PyResult<IO> {
     let serial_port = serialport::new(serialportname, baudrate)
         .timeout(Duration::from_millis(1000))
         .open()
-        .map_err(|e| SerialportError(e))?;
+        .map_err(SerialportError)?;
     let serial_port = Mutex::new(serial_port);
 
     let io = r::DynamixelSerialIO::feetech();

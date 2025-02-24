@@ -22,6 +22,22 @@ impl IO {
             })
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
+    fn write_goal_position(&self, ids: Vec<u8>, goal_position: Vec<f64>) -> PyResult<()> {
+        let mut serial_port = self.serial_port.lock().unwrap();
+
+        let goal_position: Vec<i16> = goal_position
+            .into_iter()
+            .map(feetech_sts3215::conv::radians_to_dxl_pos)
+            .collect();
+
+        feetech_sts3215::sync_write_goal_position(
+            &self.io,
+            serial_port.as_mut(),
+            &ids,
+            &goal_position,
+        )
+        .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
     // fn read_present_velocity(&self, ids: Vec<u8>) -> PyResult<Vec<u16>> {
     //     let mut serial_port = self.serial_port.lock().unwrap();
     //     feetech_sts3215::sync_read_present_speed(&self.io, serial_port.as_mut(), &ids)

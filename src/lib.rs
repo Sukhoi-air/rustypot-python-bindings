@@ -1,4 +1,8 @@
-use std::{sync::Mutex, time::Duration};
+use std::{
+    sync::{Arc, Mutex, RwLock},
+    thread,
+    time::Duration,
+};
 
 use pyo3::{exceptions::PyIOError, prelude::*};
 
@@ -94,6 +98,95 @@ impl From<SerialportError> for PyErr {
     }
 }
 
+#[pyclass]
+struct FeetechController {
+    kps: Arc<RwLock<Vec<f64>>>,
+    goal_pos: Arc<RwLock<Vec<f64>>>,
+}
+
+#[pymethods]
+impl FeetechController {
+    #[new]
+    fn new(
+        serialport: String,
+        baudrate: u32,
+        update_freq: f32,
+        ids: Vec<u8>,
+        kps: Vec<f64>,
+    ) -> PyResult<Self> {
+        let io = feetech(&serialport, baudrate).unwrap();
+        let present_pos = io.read_present_position(ids.clone()).unwrap();
+
+        let goal_pos = Arc::new(RwLock::new(present_pos.clone()));
+        let kps = Arc::new(RwLock::new(kps));
+
+        let c = FeetechController {
+            kps: kps.clone(),
+            goal_pos: goal_pos.clone(),
+        };
+
+        let dt = Duration::from_secs_f32(1.0 / update_freq);
+
+        let goal_pos = goal_pos.clone();
+        let kps = kps.clone();
+
+        thread::spawn(move || loop {
+            let present_pos: Vec<f64> = io
+                .read_present_position(ids.clone())
+                .unwrap()
+                .iter()
+                .map(|x| x.to_degrees())
+                .collect();
+
+            let goal_pos = {
+                let goal_pos = goal_pos.read().unwrap();
+                goal_pos.clone()
+            };
+
+            let mut errors = vec![];
+            for i in 0..ids.len() {
+                errors.push(goal_pos[i] - present_pos[i]);
+            }
+
+            let mut pwms = vec![];
+            {
+                let kps = kps.read().unwrap();
+                for i in 0..ids.len() {
+                    let pwm = kps[i] * errors[i];
+                    let pwm = pwm.clamp(-1000.0, 1000.0);
+                    let pwm = pwm as i16;
+                    pwms.push(pwm);
+                }
+            }
+
+            let pwm_magnitudes: Vec<u16> = pwms.iter().map(|x| x.abs() as u16).collect();
+            let direction_bits: Vec<u16> =
+                pwms.iter().map(|x| if x >= &0 { 1 } else { 0 }).collect();
+
+            let mut goal_times = vec![];
+            for i in 0..ids.len() {
+                let goal_time = (direction_bits[i] << 10) | pwm_magnitudes[i];
+                goal_times.push(goal_time);
+            }
+
+            io.set_goal_time(ids.clone(), goal_times).unwrap();
+
+            thread::sleep(dt);
+        });
+        Ok(c)
+    }
+    fn set_new_target(&mut self, goal_pos: Vec<f64>) -> PyResult<()> {
+        self.goal_pos.write().unwrap().clone_from_slice(&goal_pos);
+
+        Ok(())
+    }
+    fn set_new_kps(&mut self, kps: Vec<f64>) -> PyResult<()> {
+        self.kps.write().unwrap().clone_from_slice(&kps);
+
+        Ok(())
+    }
+}
+
 #[pyfunction]
 fn feetech(serialportname: &str, baudrate: u32) -> PyResult<IO> {
     let serial_port = serialport::new(serialportname, baudrate)
@@ -111,7 +204,8 @@ fn feetech(serialportname: &str, baudrate: u32) -> PyResult<IO> {
 #[pymodule]
 fn rustypot(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(feetech, m)?)?;
-    m.add_class::<IO>()?;
+
+    m.add_class::<FeetechController>()?;
 
     Ok(())
 }

@@ -1,7 +1,8 @@
 use std::{
     sync::{Arc, Mutex, RwLock},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
+    vec,
 };
 
 use pyo3::{exceptions::PyIOError, prelude::*};
@@ -102,6 +103,7 @@ impl From<SerialportError> for PyErr {
 struct FeetechController {
     kps: Arc<RwLock<Vec<f64>>>,
     goal_pos: Arc<RwLock<Vec<f64>>>,
+    current_speed: Arc<RwLock<Vec<f64>>>,
 }
 
 #[pymethods]
@@ -117,12 +119,17 @@ impl FeetechController {
         let io = feetech(&serialport, baudrate).unwrap();
         let present_pos = io.read_present_position(ids.clone()).unwrap();
 
-        let goal_pos = Arc::new(RwLock::new(present_pos.clone()));
+        // Setup IO and motors
+        io.set_mode(ids.clone(), 2)?;
+
         let kps = Arc::new(RwLock::new(kps));
+        let goal_pos = Arc::new(RwLock::new(present_pos.clone()));
+        let current_speed = Arc::new(RwLock::new(vec![0.0; ids.len()]));
 
         let c = FeetechController {
             kps: kps.clone(),
             goal_pos: goal_pos.clone(),
+            current_speed: current_speed.clone(),
         };
 
         let dt = Duration::from_secs_f32(1.0 / update_freq);
@@ -130,48 +137,72 @@ impl FeetechController {
         let goal_pos = goal_pos.clone();
         let kps = kps.clone();
 
-        thread::spawn(move || loop {
-            let present_pos: Vec<f64> = io
-                .read_present_position(ids.clone())
-                .unwrap()
-                .iter()
-                .map(|x| x.to_degrees())
-                .collect();
+        thread::spawn(move || {
+            const SPEED_DECIMATION: u32 = 2;
+            let mut speed_decimation_index = 0;
+            let mut last_t = Instant::now();
+            let mut last_pos = vec![0.0; ids.len()];
 
-            let goal_pos = {
-                let goal_pos = goal_pos.read().unwrap();
-                goal_pos.clone()
-            };
+            loop {
+                let present_pos: Vec<f64> = io
+                    .read_present_position(ids.clone())
+                    .unwrap()
+                    .iter()
+                    .map(|x| x.to_degrees())
+                    .collect();
 
-            let mut errors = vec![];
-            for i in 0..ids.len() {
-                errors.push(goal_pos[i] - present_pos[i]);
-            }
+                let goal_pos = {
+                    let goal_pos = goal_pos.read().unwrap();
+                    goal_pos.clone()
+                };
 
-            let mut pwms = vec![];
-            {
-                let kps = kps.read().unwrap();
+                let kps = {
+                    let kps = kps.read().unwrap();
+                    kps.clone()
+                };
+
+                let mut pwms = vec![];
                 for i in 0..ids.len() {
-                    let pwm = kps[i] * errors[i];
+                    let error = goal_pos[i] - present_pos[i];
+                    let pwm = kps[i] * error;
                     let pwm = pwm.clamp(-1000.0, 1000.0);
                     let pwm = pwm as i16;
                     pwms.push(pwm);
                 }
+
+                let pwm_magnitudes: Vec<u16> = pwms.iter().map(|x| x.abs() as u16).collect();
+                let direction_bits: Vec<u16> =
+                    pwms.iter().map(|x| if x >= &0 { 1 } else { 0 }).collect();
+
+                let mut goal_times = vec![];
+                for i in 0..ids.len() {
+                    let goal_time = (direction_bits[i] << 10) | pwm_magnitudes[i];
+                    goal_times.push(goal_time);
+                }
+
+                io.set_goal_time(ids.clone(), goal_times).unwrap();
+
+                if speed_decimation_index % SPEED_DECIMATION == 0 {
+                    let mut speeds = vec![];
+                    let dt = last_t.elapsed().as_secs_f64();
+                    for i in 0..ids.len() {
+                        let speed = (present_pos[i] - last_pos[i]) / dt;
+                        speeds.push(speed);
+                    }
+
+                    {
+                        let mut current_speed = current_speed.write().unwrap();
+                        current_speed.clone_from_slice(&speeds);
+                    }
+
+                    last_pos = present_pos.clone();
+                    last_t = Instant::now();
+                }
+
+                speed_decimation_index += 1;
+
+                thread::sleep(dt);
             }
-
-            let pwm_magnitudes: Vec<u16> = pwms.iter().map(|x| x.abs() as u16).collect();
-            let direction_bits: Vec<u16> =
-                pwms.iter().map(|x| if x >= &0 { 1 } else { 0 }).collect();
-
-            let mut goal_times = vec![];
-            for i in 0..ids.len() {
-                let goal_time = (direction_bits[i] << 10) | pwm_magnitudes[i];
-                goal_times.push(goal_time);
-            }
-
-            io.set_goal_time(ids.clone(), goal_times).unwrap();
-
-            thread::sleep(dt);
         });
         Ok(c)
     }
@@ -184,6 +215,9 @@ impl FeetechController {
         self.kps.write().unwrap().clone_from_slice(&kps);
 
         Ok(())
+    }
+    fn get_current_speed(&self) -> PyResult<Vec<f64>> {
+        Ok(self.current_speed.read().unwrap().clone())
     }
 }
 

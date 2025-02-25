@@ -2,14 +2,12 @@ import rustypot
 import time
 import numpy as np
 
-
-# io = rustypot.feetech("/dev/ttyACM0", 1000000)
-controller = rustypot.FeetechController("/dev/ttyACM0", 1000000, 500, [1], [32])
+controller = rustypot.FeetechController("/dev/ttyACM0", 1000000, 100, [24], [32])
 controller.set_new_target([0])  
 time.sleep(2)
 
 update_freq = 50
-F = 1
+F = 0.5
 A = 90
 try:
     while True:
@@ -20,6 +18,4 @@ try:
         time.sleep(1/update_freq)
 except KeyboardInterrupt:
     controller.freeze()
-    # controller.disable_torque()
-    # controller.set_new_target([0])  
     time.sleep(1)

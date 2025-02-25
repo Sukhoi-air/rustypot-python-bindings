@@ -19,5 +19,7 @@ try:
         print(controller.get_current_speed())
         time.sleep(1/update_freq)
 except KeyboardInterrupt:
-    controller.set_new_target([0])  
+    controller.freeze()
+    # controller.disable_torque()
+    # controller.set_new_target([0])  
     time.sleep(1)

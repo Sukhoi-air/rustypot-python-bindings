@@ -105,6 +105,8 @@ struct FeetechController {
     goal_pos: Arc<RwLock<Vec<f64>>>,
     current_speed: Arc<RwLock<Vec<f64>>>,
     present_pos: Arc<RwLock<Vec<f64>>>,
+    io: Arc<IO>,
+    ids: Arc<Vec<u8>>,
 }
 
 #[pymethods]
@@ -117,7 +119,7 @@ impl FeetechController {
         ids: Vec<u8>,
         kps: Vec<f64>,
     ) -> PyResult<Self> {
-        let io = feetech(&serialport, baudrate).unwrap();
+        let io = Arc::new(feetech(&serialport, baudrate).unwrap());
         let present_pos = io.read_present_position(ids.clone()).unwrap();
 
         // Setup IO and motors
@@ -127,12 +129,15 @@ impl FeetechController {
         let goal_pos = Arc::new(RwLock::new(present_pos.clone()));
         let current_speed = Arc::new(RwLock::new(vec![0.0; ids.len()]));
         let present_pos = Arc::new(RwLock::new(present_pos));
+        let ids = Arc::new(ids);
 
         let c = FeetechController {
             kps: kps.clone(),
             goal_pos: goal_pos.clone(),
             current_speed: current_speed.clone(),
             present_pos: present_pos.clone(),
+            io: io.clone(),
+            ids: ids.clone(),
         };
 
         let period = Duration::from_secs_f32(1.0 / update_freq);
@@ -140,17 +145,19 @@ impl FeetechController {
         let goal_pos = goal_pos.clone();
         let kps = kps.clone();
         let present_pos_arc = present_pos.clone();
+        let ids = ids.clone();
+        let io = io.clone();
 
         thread::spawn(move || {
             const SPEED_DECIMATION: u32 = 2;
             let mut speed_decimation_index = 0;
             let mut last_t = Instant::now();
-            let mut last_pos = vec![0.0; ids.len()];
+            let mut last_pos = vec![0.0; ids.as_ref().len()];
 
             loop {
                 let tic = Instant::now();
                 let present_pos: Vec<f64> = io
-                    .read_present_position(ids.clone())
+                    .read_present_position(ids.as_ref().to_vec())
                     .unwrap()
                     .iter()
                     .map(|x| x.to_degrees())
@@ -172,7 +179,7 @@ impl FeetechController {
                 };
 
                 let mut pwms = vec![];
-                for i in 0..ids.len() {
+                for i in 0..ids.as_ref().len() {
                     let error = goal_pos[i] - present_pos[i];
                     let pwm = kps[i] * error;
                     let pwm = pwm.clamp(-1000.0, 1000.0);
@@ -185,17 +192,17 @@ impl FeetechController {
                     pwms.iter().map(|x| if x >= &0 { 1 } else { 0 }).collect();
 
                 let mut goal_times = vec![];
-                for i in 0..ids.len() {
+                for i in 0..ids.as_ref().len() {
                     let goal_time = (direction_bits[i] << 10) | pwm_magnitudes[i];
                     goal_times.push(goal_time);
                 }
 
-                io.set_goal_time(ids.clone(), goal_times).unwrap();
+                io.set_goal_time(ids.as_ref().to_vec(), goal_times).unwrap();
 
                 if speed_decimation_index % SPEED_DECIMATION == 0 {
                     let mut speeds = vec![];
                     let dt = last_t.elapsed().as_secs_f64();
-                    for i in 0..ids.len() {
+                    for i in 0..ids.as_ref().len() {
                         let speed = (present_pos[i] - last_pos[i]) / dt;
                         speeds.push(speed);
                     }
@@ -240,6 +247,22 @@ impl FeetechController {
 
     fn get_present_position(&self) -> PyResult<Vec<f64>> {
         Ok(self.present_pos.read().unwrap().clone())
+    }
+
+    fn disable_torque(&self) -> PyResult<()> {
+        let ids = self.ids.as_ref().to_vec();
+        self.io.set_mode(ids.clone(), 0)?;
+        self.io.disable_torque(ids)?;
+        Ok(())
+    }
+
+    fn freeze(&self) -> PyResult<()> {
+        let ids = self.ids.as_ref().to_vec();
+        let present_position = self.io.read_present_position(ids.clone())?;
+        self.io.write_goal_position(ids.clone(), present_position)?;
+        self.io.set_mode(ids.clone(), 0)?;
+        self.io.enable_torque(ids.clone())?;
+        Ok(())
     }
 }
 

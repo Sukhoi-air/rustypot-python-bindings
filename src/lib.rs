@@ -224,13 +224,13 @@ impl FeetechController {
                 let elapsed = toc.saturating_duration_since(tic);
                 // let elapsed = toc - tic;
                 // let sleep_time = period - elapsed;
-                
+
                 // sleep time is period - min(elapsed, period)
                 let sleep_time = period
                     .checked_sub(elapsed)
                     .unwrap_or_else(|| Duration::from_secs(0));
 
-                if sleep_time.as_secs_f64() < 0.0 {
+                if sleep_time.as_secs_f64() <= 0.0 {
                     eprintln!("Warning: loop took longer than period");
                 } else {
                     thread::sleep(sleep_time);

@@ -118,15 +118,17 @@ impl FeetechController {
         update_freq: f32,
         ids: Vec<u8>,
         kps: Vec<f64>,
+        init_pos: Vec<f64>,
     ) -> PyResult<Self> {
         let io = Arc::new(feetech(&serialport, baudrate).unwrap());
         let present_pos = io.read_present_position(ids.clone()).unwrap();
 
+
         // Setup IO and motors
         io.set_mode(ids.clone(), 2)?;
-
+        
         let kps = Arc::new(RwLock::new(kps));
-        let goal_pos = Arc::new(RwLock::new(present_pos.clone()));
+        let goal_pos = Arc::new(RwLock::new(init_pos.clone()));
         let current_speed = Arc::new(RwLock::new(vec![0.0; ids.len()]));
         let present_pos = Arc::new(RwLock::new(present_pos));
         let ids = Arc::new(ids);

@@ -8,7 +8,7 @@ time.sleep(2)
 
 update_freq = 50
 F = 0.5
-A = 90
+A = 40
 try:
     while True:
         new_target = A*np.sin(2*np.pi*F*time.time())

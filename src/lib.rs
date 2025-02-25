@@ -104,6 +104,7 @@ struct FeetechController {
     kps: Arc<RwLock<Vec<f64>>>,
     goal_pos: Arc<RwLock<Vec<f64>>>,
     current_speed: Arc<RwLock<Vec<f64>>>,
+    present_pos: Arc<RwLock<Vec<f64>>>,
 }
 
 #[pymethods]
@@ -125,17 +126,20 @@ impl FeetechController {
         let kps = Arc::new(RwLock::new(kps));
         let goal_pos = Arc::new(RwLock::new(present_pos.clone()));
         let current_speed = Arc::new(RwLock::new(vec![0.0; ids.len()]));
+        let present_pos = Arc::new(RwLock::new(present_pos));
 
         let c = FeetechController {
             kps: kps.clone(),
             goal_pos: goal_pos.clone(),
             current_speed: current_speed.clone(),
+            present_pos: present_pos.clone(),
         };
 
         let period = Duration::from_secs_f32(1.0 / update_freq);
 
         let goal_pos = goal_pos.clone();
         let kps = kps.clone();
+        let present_pos_arc = present_pos.clone();
 
         thread::spawn(move || {
             const SPEED_DECIMATION: u32 = 2;
@@ -151,6 +155,11 @@ impl FeetechController {
                     .iter()
                     .map(|x| x.to_degrees())
                     .collect();
+
+                {
+                    let mut stored_pos = present_pos_arc.write().unwrap();
+                    stored_pos.clone_from_slice(&present_pos);
+                }
 
                 let goal_pos = {
                     let goal_pos = goal_pos.read().unwrap();
@@ -227,6 +236,10 @@ impl FeetechController {
     }
     fn get_current_speed(&self) -> PyResult<Vec<f64>> {
         Ok(self.current_speed.read().unwrap().clone())
+    }
+
+    fn get_present_position(&self) -> PyResult<Vec<f64>> {
+        Ok(self.present_pos.read().unwrap().clone())
     }
 }
 

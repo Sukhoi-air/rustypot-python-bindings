@@ -31,6 +31,8 @@ jobs:
             target: x86
           - runner: ubuntu-latest
             target: armv7
+          - runner: ubuntu-latest
+            target: aarch64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,18 +44,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           manylinux: auto
-          before-script-linux: |
-            case "${{ matrix.platform.target }}" in
-              "aarch64" | "armv7" | "s390x" | "ppc64le")
-                # NOTE: pypa/manylinux docker images are Debian based
-                apt-get update && apt-get install -y libudev-dev
-                ;;
-              "x86" | "x86_64")
-                # NOTE: rust-cross/manylinux docker images are CentOS based
-                yum update -y
-                yum install -y libudev-devel
-                ;;
-            esac
+          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:

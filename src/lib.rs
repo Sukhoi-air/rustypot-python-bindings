@@ -36,7 +36,7 @@ impl IO {
             .map(|speeds| {
                 speeds
                     .into_iter()
-                    .map(|x| feetech_sts3215::conv::dxl_to_speed(x as i16))
+                    .map(|x| feetech_sts3215::conv::dxl_to_speed(x as u16))
                     .collect()
             })
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))

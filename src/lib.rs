@@ -84,6 +84,13 @@ impl IO {
 
         feetech_sts3215::sync_write_p_coefficient(&self.io, serial_port.as_mut(), &ids, &kps)
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+
+        // print the values of d_coefficient
+
+        let d_coefficient = feetech_sts3215::sync_read_d_coefficient(&self.io, serial_port.as_mut(), &ids)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+
+        println!("d_coefficient: {:?}", d_coefficient);
     }
 
     fn set_kds(&self, ids: Vec<u8>, kds: Vec<f64>) -> PyResult<()> {

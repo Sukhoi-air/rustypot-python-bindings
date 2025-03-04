@@ -28,14 +28,14 @@ impl IO {
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
 
-
-    // not good ? 
+    // not good ?
     fn read_present_velocity(&self, ids: Vec<u8>) -> PyResult<Vec<f64>> {
         let mut serial_port = self.serial_port.lock().unwrap();
-        
+
         feetech_sts3215::sync_read_present_speed(&self.io, serial_port.as_mut(), &ids)
             .map(|speeds| {
-                speeds.into_iter()
+                speeds
+                    .into_iter()
                     .map(|x| feetech_sts3215::conv::dxl_to_speed(x as i16))
                     .collect()
             })
@@ -83,6 +83,15 @@ impl IO {
         let kps: Vec<u8> = kps.iter().map(|x| *x as u8).collect();
 
         feetech_sts3215::sync_write_p_coefficient(&self.io, serial_port.as_mut(), &ids, &kps)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+
+    fn set_kds(&self, ids: Vec<u8>, kds: Vec<f64>) -> PyResult<()> {
+        let mut serial_port = self.serial_port.lock().unwrap();
+
+        let kds: Vec<u8> = kds.iter().map(|x| *x as u8).collect();
+
+        feetech_sts3215::sync_write_d_coefficient(&self.io, serial_port.as_mut(), &ids, &kds)
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
 

@@ -10,5 +10,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.23.3"
-rustypot = { version = "0.6.0", git = "https://github.com/pollen-robotics/rustypot.git", branch = "66-support-for-feetech-motors-fts3215" }
+rustypot = { version = "0.7.0", git = "https://github.com/pollen-robotics/rustypot.git", branch = "66-support-for-feetech-motors-fts3215" }
 serialport = { version = "4.7.0", default-features = false}

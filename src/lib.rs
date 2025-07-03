@@ -489,7 +489,7 @@ impl IO {
             })
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
-    fn set_goal_position(&self, ids: Vec<u8>, goal_position: Vec<f64>) -> PyResult<()> {
+    fn write_goal_position(&self, ids: Vec<u8>, goal_position: Vec<f64>) -> PyResult<()> {
         let mut serial_port = self.serial_port.lock().unwrap();
 
         let goal_position: Vec<i16> = goal_position
@@ -566,7 +566,7 @@ impl IO {
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
 
-    fn get_present_position(&self, ids: Vec<u8>) -> PyResult<Vec<f64>> {
+    fn read_present_position(&self, ids: Vec<u8>) -> PyResult<Vec<f64>> {
         let mut serial_port = self.serial_port.lock().unwrap();
         feetech_sts3215::sync_read_present_position(&self.io, serial_port.as_mut(), &ids)
             .map(|pos| {
@@ -578,7 +578,7 @@ impl IO {
     }
 
     // not good ?
-    fn get_present_speed(&self, ids: Vec<u8>) -> PyResult<Vec<f64>> {
+    fn read_present_velocity(&self, ids: Vec<u8>) -> PyResult<Vec<f64>> {
         let mut serial_port = self.serial_port.lock().unwrap();
 
         feetech_sts3215::sync_read_present_speed(&self.io, serial_port.as_mut(), &ids)

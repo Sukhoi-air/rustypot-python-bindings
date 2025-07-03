@@ -2,32 +2,47 @@ name: ARM CI Build
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - full-feetech-api
-    tags:
-      - '*'
+    branches: [main, master,full-feetech-api]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  CARGO_INCREMENTAL: 0  # 禁用增量编译（避免跨平台问题）
+
 jobs:
   linux_arm:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [armv7, aarch64]  # 仅编译 ARM 架构
+        target: [armv7, aarch64]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive  # 确保拉取 Git 子模块
+
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: ${{ matrix.target }}
+          override: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build ARM wheel
         uses: PyO3/maturin-action@v1
@@ -35,11 +50,10 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           manylinux: auto
-          sccache: false  # 强制禁用 sccache
+          sccache: false
 
-      - name: Upload wheel artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: wheel-arm-${{ matrix.target }}
           path: dist
-          retention-days: 7  # 设置 artifacts 保留天数（可选）
